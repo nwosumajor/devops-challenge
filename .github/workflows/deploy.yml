@@ -1,0 +1,53 @@
+name: Production CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'app/**'      # Only trigger if application code changes
+      - '.github/**'  # Or if this pipeline file changes
+
+permissions:
+  id-token: write # CRITICAL: Required to request the OIDC JWT token
+  contents: read  # Required to checkout the code
+
+jobs:
+  build-test-deploy:
+    name: Build, Test, and Deploy to ECS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::491013322217:role/devops-challenge-github-actions-role
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, Test, and Push Docker Image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPOSITORY: devops-challenge-repo
+          IMAGE_TAG: latest
+        run: |
+          # 1. Build the image (This automatically runs Jest tests via Stage 2 of the Dockerfile)
+          docker build -t $REGISTRY/$REPOSITORY:$IMAGE_TAG ./app
+          
+          # 2. Push the successfully tested image to ECR
+          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
+
+      - name: Trigger ECS Fargate Deployment
+        run: |
+          # Force ECS to pull the new 'latest' image and roll the containers
+          aws ecs update-service \
+            --cluster devops-challenge-cluster \
+            --service devops-challenge-service \
+            --force-new-deployment \
+            --region us-east-1
