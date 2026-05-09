@@ -107,3 +107,10 @@ resource "aws_iam_role_policy" "github_actions_policy" {
     ]
   })
 }
+# 8. Monitoring Module
+module "monitoring" {
+  source       = "./modules/monitoring"
+  project_name = var.project_name
+  cluster_name = module.ecs.cluster_name
+  service_name = module.ecs.service_name
+}
